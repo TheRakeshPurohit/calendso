@@ -3,6 +3,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { z } from "zod";
 
 import { symmetricEncrypt } from "@calcom/lib/crypto";
+import { emailSchema } from "@calcom/lib/emailSchema";
 import logger from "@calcom/lib/logger";
 import { defaultResponder } from "@calcom/lib/server";
 import prisma from "@calcom/prisma";
@@ -14,7 +15,7 @@ import { CalendarService } from "../lib";
 const formSchema = z
   .object({
     url: z.string().url(),
-    username: z.string().email(),
+    username: emailSchema,
     password: z.string(),
     authenticationMethod: z.number().default(ExchangeAuthentication.STANDARD),
     exchangeVersion: z.number().default(ExchangeVersion.Exchange2016),
@@ -36,7 +37,7 @@ export async function getHandler(req: NextApiRequest, res: NextApiResponse) {
   };
 
   try {
-    const service = new CalendarService({ id: 0, ...data });
+    const service = new CalendarService({ id: 0, user: { email: session.user.email || "" }, ...data });
     await service?.listCalendars();
     await prisma.credential.create({ data });
   } catch (reason) {

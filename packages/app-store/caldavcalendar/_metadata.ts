@@ -15,8 +15,9 @@ export const metadata = {
   publisher: "Cal.com",
   slug: "caldav-calendar",
   url: "https://cal.com/",
-  email: "ali@cal.com",
+  email: "help@cal.com",
   dirName: "caldavcalendar",
+  isOAuth: false,
 } as AppMeta;
 
 export default metadata;

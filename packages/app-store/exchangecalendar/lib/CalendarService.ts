@@ -48,7 +48,7 @@ export default class ExchangeCalendarService implements Calendar {
 
   constructor(credential: CredentialPayload) {
     this.integrationName = "exchange_calendar";
-    this.log = logger.getChildLogger({ prefix: [`[[lib] ${this.integrationName}`] });
+    this.log = logger.getSubLogger({ prefix: [`[[lib] ${this.integrationName}`] });
     this.payload = JSON.parse(
       symmetricDecrypt(credential.key?.toString() || "", process.env.CALENDSO_ENCRYPTION_KEY || "")
     );
@@ -204,7 +204,6 @@ export default class ExchangeCalendarService implements Calendar {
     if (this.payload.authenticationMethod === ExchangeAuthentication.NTLM) {
       const xhr: XhrApi = new XhrApi({
         rejectUnauthorized: false,
-        gzip: this.payload.useCompression,
       }).useNtlmAuthentication(this.payload.username, this.payload.password);
       service.XHRApi = xhr;
     }

@@ -1,38 +1,56 @@
-import type { Membership, Team } from "@calcom/prisma/client";
 import { MembershipRole } from "@calcom/prisma/enums";
-import { teamMetadataSchema } from "@calcom/prisma/zod-utils";
 
 export const enum ENTITY_PERMISSION_LEVEL {
   NONE,
+  // It is owned by user and user has write access to it
   USER_ONLY_WRITE,
+  // All members of the team has access to it and user has read access to it
   TEAM_READ_ONLY,
+  // All members of the team has access to it and user has write access to it
   TEAM_WRITE,
 }
 
-export function canEditEntity(
+export async function canEditEntity(
   entity: Parameters<typeof getEntityPermissionLevel>[0],
   userId: Parameters<typeof getEntityPermissionLevel>[1]
 ) {
-  const permissionLevel = getEntityPermissionLevel(entity, userId);
+  const permissionLevel = await getEntityPermissionLevel(entity, userId);
   return (
     permissionLevel === ENTITY_PERMISSION_LEVEL.TEAM_WRITE ||
     permissionLevel === ENTITY_PERMISSION_LEVEL.USER_ONLY_WRITE
   );
 }
 
-export function isOrganization({ team }: { team: { metadata: Team["metadata"] } }) {
-  return teamMetadataSchema.parse(team.metadata)?.isOrganization;
+export async function canAccessEntity(
+  entity: Parameters<typeof getEntityPermissionLevel>[0],
+  userId: Parameters<typeof getEntityPermissionLevel>[1]
+) {
+  const permissionLevel = await getEntityPermissionLevel(entity, userId);
+  return (
+    permissionLevel === ENTITY_PERMISSION_LEVEL.TEAM_WRITE ||
+    permissionLevel === ENTITY_PERMISSION_LEVEL.USER_ONLY_WRITE ||
+    permissionLevel === ENTITY_PERMISSION_LEVEL.TEAM_READ_ONLY
+  );
 }
 
-export function getEntityPermissionLevel(
+export async function getEntityPermissionLevel(
   entity: {
     userId: number | null;
-    team: { members: Membership[] } | null;
+    teamId: number | null;
   },
   userId: number
 ) {
-  if (entity.team) {
-    const roleForTeamMember = entity.team.members.find((member) => member.userId === userId)?.role;
+  if (entity.teamId) {
+    const { prisma } = await import("@calcom/prisma");
+    const membership = await prisma.membership.findFirst({
+      where: {
+        teamId: entity.teamId,
+        userId,
+        accepted: true,
+      },
+    });
+    const roleForTeamMember = membership?.role;
+
     if (roleForTeamMember) {
       //TODO: Remove type assertion
       const hasWriteAccessToTeam = (
@@ -69,7 +87,12 @@ async function getMembership(teamId: number | null, userId: number) {
           },
         },
         include: {
-          members: true,
+          members: {
+            select: {
+              userId: true,
+              role: true,
+            },
+          },
         },
       })
     : null;
@@ -86,8 +109,7 @@ export async function canCreateEntity({
   if (targetTeamId) {
     // If it doesn't exist and it is being created for a team. Check if user is the member of the team
     const membership = await getMembership(targetTeamId, userId);
-    const creationAllowed = membership ? withRoleCanCreateEntity(membership.role) : false;
-    return creationAllowed;
+    return membership ? withRoleCanCreateEntity(membership.role) : false;
   }
   return true;
 }

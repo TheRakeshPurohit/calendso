@@ -3,11 +3,11 @@ import type { Dispatch } from "react";
 
 import MemberChangeRoleModal from "@calcom/features/ee/teams/components/MemberChangeRoleModal";
 
-import type { Action, State } from "./UserListTable";
+import type { UserTableAction, UserTableState } from "./types";
 
-export function ChangeUserRoleModal(props: { state: State; dispatch: Dispatch<Action> }) {
+export function ChangeUserRoleModal(props: { state: UserTableState; dispatch: Dispatch<UserTableAction> }) {
   const { data: session } = useSession();
-  const orgId = session?.user.organizationId;
+  const orgId = session?.user.org?.id;
   if (!orgId || !props.state.changeMemberRole.user) return null;
 
   return (

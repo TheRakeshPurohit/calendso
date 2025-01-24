@@ -6,6 +6,7 @@ export interface PartialReference {
   uid: string;
   meetingId?: string | null;
   meetingPassword?: string | null;
+  thirdPartyRecurringEventId?: string | null;
   meetingUrl?: string | null;
   externalCalendarId?: string | null;
   credentialId?: number | null;
@@ -23,6 +24,7 @@ export interface EventResult<T> {
   calError?: string;
   calWarnings?: string[];
   credentialId?: number;
+  externalId?: string | null;
 }
 
 export interface CreateUpdateResult {

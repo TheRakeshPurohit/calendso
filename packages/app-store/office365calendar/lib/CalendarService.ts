@@ -1,12 +1,10 @@
-import type { Calendar as OfficeCalendar, User } from "@microsoft/microsoft-graph-types-beta";
+import type { Calendar as OfficeCalendar, User, Event } from "@microsoft/microsoft-graph-types-beta";
 import type { DefaultBodyType } from "msw";
-import { z } from "zod";
 
 import dayjs from "@calcom/dayjs";
 import { getLocation, getRichDescription } from "@calcom/lib/CalEventParser";
 import { handleErrorsJson, handleErrorsRaw } from "@calcom/lib/errors";
 import logger from "@calcom/lib/logger";
-import prisma from "@calcom/prisma";
 import type { BufferedBusyTime } from "@calcom/types/BufferedBusyTime";
 import type {
   Calendar,
@@ -17,7 +15,10 @@ import type {
 } from "@calcom/types/Calendar";
 import type { CredentialPayload } from "@calcom/types/Credential";
 
-import type { O365AuthCredentials } from "../types/Office365Calendar";
+import { OAuthManager } from "../../_utils/oauth/OAuthManager";
+import { getTokenObjectFromCredential } from "../../_utils/oauth/getTokenObjectFromCredential";
+import { oAuthManagerHelper } from "../../_utils/oauth/oAuthManagerHelper";
+import metadata from "../_metadata";
 import { getOfficeAppKeys } from "./getOfficeAppKeys";
 
 interface IRequest {
@@ -46,33 +47,70 @@ interface BodyValue {
   start: { dateTime: string };
 }
 
-const refreshTokenResponseSchema = z.object({
-  access_token: z.string(),
-  expires_in: z
-    .number()
-    .transform((currentTimeOffsetInSeconds) => Math.round(+new Date() / 1000 + currentTimeOffsetInSeconds)),
-  refresh_token: z.string().optional(),
-});
-
 export default class Office365CalendarService implements Calendar {
   private url = "";
   private integrationName = "";
   private log: typeof logger;
-  private accessToken: string | null = null;
-  auth: { getToken: () => Promise<string> };
+  private auth: OAuthManager;
   private apiGraphUrl = "https://graph.microsoft.com/v1.0";
+  private credential: CredentialPayload;
 
   constructor(credential: CredentialPayload) {
     this.integrationName = "office365_calendar";
-    this.auth = this.o365Auth(credential);
+    const tokenResponse = getTokenObjectFromCredential(credential);
 
-    this.log = logger.getChildLogger({ prefix: [`[[lib] ${this.integrationName}`] });
+    this.auth = new OAuthManager({
+      credentialSyncVariables: oAuthManagerHelper.credentialSyncVariables,
+      resourceOwner: {
+        type: "user",
+        id: credential.userId,
+      },
+      appSlug: metadata.slug,
+      currentTokenObject: tokenResponse,
+      fetchNewTokenObject: async ({ refreshToken }: { refreshToken: string | null }) => {
+        if (!refreshToken) {
+          return null;
+        }
+        const { client_id, client_secret } = await getOfficeAppKeys();
+        return await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            scope: "User.Read Calendars.Read Calendars.ReadWrite",
+            client_id,
+            refresh_token: refreshToken,
+            grant_type: "refresh_token",
+            client_secret,
+          }),
+        });
+      },
+      isTokenObjectUnusable: async function () {
+        // TODO: Implement this. As current implementation of CalendarService doesn't handle it. It hasn't been handled in the OAuthManager implementation as well.
+        // This is a placeholder for future implementation.
+        return null;
+      },
+      isAccessTokenUnusable: async function () {
+        // TODO: Implement this
+        return null;
+      },
+      invalidateTokenObject: () => oAuthManagerHelper.invalidateCredential(credential.id),
+      expireAccessToken: () => oAuthManagerHelper.markTokenAsExpired(credential),
+      updateTokenObject: (tokenObject) =>
+        oAuthManagerHelper.updateTokenObject({ tokenObject, credentialId: credential.id }),
+    });
+
+    this.credential = credential;
+    this.log = logger.getSubLogger({ prefix: [`[[lib] ${this.integrationName}`] });
   }
 
-  async createEvent(event: CalendarEvent): Promise<NewCalendarEventType> {
+  async createEvent(event: CalendarEvent, credentialId: number): Promise<NewCalendarEventType> {
+    const mainHostDestinationCalendar = event.destinationCalendar
+      ? event.destinationCalendar.find((cal) => cal.credentialId === credentialId) ??
+        event.destinationCalendar[0]
+      : undefined;
     try {
-      const eventsUrl = event.destinationCalendar?.externalId
-        ? `/me/calendars/${event.destinationCalendar?.externalId}/events`
+      const eventsUrl = mainHostDestinationCalendar?.externalId
+        ? `/me/calendars/${mainHostDestinationCalendar?.externalId}/events`
         : "/me/calendar/events";
 
       const response = await this.fetcher(eventsUrl, {
@@ -136,10 +174,13 @@ export default class Office365CalendarService implements Calendar {
     const calendarSelectParams = "$select=showAs,start,end";
 
     try {
-      const selectedCalendarIds = selectedCalendars
-        .filter((e) => e.integration === this.integrationName)
-        .map((e) => e.externalId)
-        .filter(Boolean);
+      const selectedCalendarIds = selectedCalendars.reduce((calendarIds, calendar) => {
+        if (calendar.integration === this.integrationName && calendar.externalId)
+          calendarIds.push(calendar.externalId);
+
+        return calendarIds;
+      }, [] as string[]);
+
       if (selectedCalendarIds.length === 0 && selectedCalendars.length > 0) {
         // Only calendars of other integrations selected
         return Promise.resolve([]);
@@ -224,65 +265,11 @@ export default class Office365CalendarService implements Calendar {
     });
   }
 
-  private o365Auth = (credential: CredentialPayload) => {
-    const isExpired = (expiryDate: number) => {
-      if (!expiryDate) {
-        return true;
-      } else {
-        return expiryDate < Math.round(+new Date() / 1000);
-      }
-    };
-    const o365AuthCredentials = credential.key as O365AuthCredentials;
-
-    const refreshAccessToken = async (o365AuthCredentials: O365AuthCredentials) => {
-      const { client_id, client_secret } = await getOfficeAppKeys();
-      const response = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          scope: "User.Read Calendars.Read Calendars.ReadWrite",
-          client_id,
-          refresh_token: o365AuthCredentials.refresh_token,
-          grant_type: "refresh_token",
-          client_secret,
-        }),
-      });
-      const responseJson = await handleErrorsJson(response);
-      const tokenResponse = refreshTokenResponseSchema.safeParse(responseJson);
-      o365AuthCredentials = { ...o365AuthCredentials, ...(tokenResponse.success && tokenResponse.data) };
-      if (!tokenResponse.success) {
-        console.error(
-          "Outlook error grabbing new tokens ~ zodError:",
-          tokenResponse.error,
-          "MS response:",
-          responseJson
-        );
-      }
-      await prisma.credential.update({
-        where: {
-          id: credential.id,
-        },
-        data: {
-          key: o365AuthCredentials,
-        },
-      });
-      return o365AuthCredentials.access_token;
-    };
-
-    return {
-      getToken: () =>
-        refreshTokenResponseSchema.safeParse(o365AuthCredentials).success &&
-        !isExpired(o365AuthCredentials.expires_in)
-          ? Promise.resolve(o365AuthCredentials.access_token)
-          : refreshAccessToken(o365AuthCredentials),
-    };
-  };
-
   private translateEvent = (event: CalendarEvent) => {
-    return {
+    const office365Event: Event = {
       subject: event.title,
       body: {
-        contentType: "HTML",
+        contentType: "text",
         content: getRichDescription(event),
       },
       start: {
@@ -293,37 +280,56 @@ export default class Office365CalendarService implements Calendar {
         dateTime: dayjs(event.endTime).tz(event.organizer.timeZone).format("YYYY-MM-DDTHH:mm:ss"),
         timeZone: event.organizer.timeZone,
       },
+      hideAttendees: !event.seatsPerTimeSlot ? false : !event.seatsShowAttendees,
+      organizer: {
+        emailAddress: {
+          address: event.destinationCalendar
+            ? event.destinationCalendar.find((cal) => cal.userId === event.organizer.id)?.externalId ??
+              event.organizer.email
+            : event.organizer.email,
+          name: event.organizer.name,
+        },
+      },
       attendees: [
         ...event.attendees.map((attendee) => ({
           emailAddress: {
             address: attendee.email,
             name: attendee.name,
           },
-          type: "required",
+          type: "required" as const,
         })),
         ...(event.team?.members
-          ? event.team?.members.map((member) => ({
-              emailAddress: {
-                address: member.email,
-                name: member.name,
-              },
-              type: "required",
-            }))
+          ? event.team?.members
+              .filter((member) => member.email !== this.credential.user?.email)
+              .map((member) => {
+                const destinationCalendar =
+                  event.destinationCalendar &&
+                  event.destinationCalendar.find((cal) => cal.userId === member.id);
+                return {
+                  emailAddress: {
+                    address: destinationCalendar?.externalId ?? member.email,
+                    name: member.name,
+                  },
+                  type: "required" as const,
+                };
+              })
           : []),
       ],
       location: event.location ? { displayName: getLocation(event) } : undefined,
     };
+    if (event.hideCalendarEventDetails) {
+      office365Event.sensitivity = "private";
+    }
+    return office365Event;
   };
 
   private fetcher = async (endpoint: string, init?: RequestInit | undefined) => {
-    this.accessToken = await this.auth.getToken();
-    return fetch(`${this.apiGraphUrl}${endpoint}`, {
-      method: "get",
-      headers: {
-        Authorization: "Bearer " + this.accessToken,
-        "Content-Type": "application/json",
+    return this.auth.requestRaw({
+      url: `${this.apiGraphUrl}${endpoint}`,
+      options: {
+        method: "get",
+        ...init,
       },
-      ...init,
     });
   };
 
@@ -375,6 +381,7 @@ export default class Office365CalendarService implements Calendar {
     maxRetries: number,
     retryCount = 0
   ): Promise<IBatchResponse> => {
+    const getRandomness = () => Number(Math.random().toFixed(3));
     let retryAfterTimeout = 0;
     if (retryCount >= maxRetries) {
       return { responses: settledPromises };
@@ -396,7 +403,7 @@ export default class Office365CalendarService implements Calendar {
     }
 
     // Await certain time from retry-after header
-    await new Promise((r) => setTimeout(r, retryAfterTimeout));
+    await new Promise((r) => setTimeout(r, retryAfterTimeout + getRandomness()));
 
     const newResponses = await this.apiGraphBatchCall(failedRequest);
     let newResponseBody = await handleErrorsJson<IBatchResponse | string>(newResponses);
@@ -453,12 +460,13 @@ export default class Office365CalendarService implements Calendar {
       (acc: BufferedBusyTime[], subResponse: { body: { value?: BodyValue[]; error?: Error[] } }) => {
         if (!subResponse.body?.value) return acc;
         return acc.concat(
-          subResponse.body.value
-            .filter((evt) => evt.showAs !== "free" && evt.showAs !== "workingElsewhere")
-            .map((evt) => ({
-              start: evt.start.dateTime + "Z",
-              end: evt.end.dateTime + "Z",
-            }))
+          subResponse.body.value.reduce((acc: BufferedBusyTime[], evt: BodyValue) => {
+            if (evt.showAs === "free" || evt.showAs === "workingElsewhere") return acc;
+            return acc.concat({
+              start: `${evt.start.dateTime}Z`,
+              end: `${evt.end.dateTime}Z`,
+            });
+          }, [])
         );
       },
       []

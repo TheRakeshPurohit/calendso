@@ -18,7 +18,7 @@ export function List(props: ListProps) {
       data-testid="list"
       {...props}
       className={classNames(
-        "-mx-4 rounded-sm sm:mx-0 sm:overflow-hidden ",
+        "mx-0 rounded-sm sm:overflow-hidden ",
         // Add rounded top and bottome if roundContainer is true
         props.roundContainer && "[&>*:first-child]:rounded-t-md [&>*:last-child]:rounded-b-md ",
         !props.noBorderTreatment &&
@@ -139,7 +139,7 @@ export function ListItemText<TComponent extends keyof JSX.IntrinsicElements = "s
     component,
     {
       ...passThroughProps,
-      className: classNames("text-sm text-subtle truncate", props.className),
+      className: classNames("text-sm text-subtle truncate prose", props.className),
       "data-testid": "list-item-text",
     },
     props.children

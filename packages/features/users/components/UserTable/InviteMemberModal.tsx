@@ -5,16 +5,18 @@ import MemberInvitationModal from "@calcom/features/ee/teams/components/MemberIn
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import { trpc } from "@calcom/trpc";
 import { showToast } from "@calcom/ui";
+import usePlatformMe from "@calcom/web/components/settings/platform/hooks/usePlatformMe";
 
-import type { Action } from "./UserListTable";
+import type { UserTableAction } from "./types";
 
 interface Props {
-  dispatch: Dispatch<Action>;
+  dispatch: Dispatch<UserTableAction>;
 }
 
 export function InviteMemberModal(props: Props) {
   const { data: session } = useSession();
-  const utils = trpc.useContext();
+  const { data: platformUser } = usePlatformMe();
+  const utils = trpc.useUtils();
   const { t, i18n } = useLocale();
   const inviteMemberMutation = trpc.viewer.teams.inviteMember.useMutation({
     async onSuccess(data) {
@@ -23,22 +25,21 @@ export function InviteMemberModal(props: Props) {
       // loaded a bunch of data and idk how pagination works with invalidation. We may need to use
       // Optimistic updates here instead.
       await utils.viewer.organizations.listMembers.invalidate();
-      if (data.sendEmailInvitation) {
-        if (Array.isArray(data.usernameOrEmail)) {
-          showToast(
-            t("email_invite_team_bulk", {
-              userCount: data.usernameOrEmail.length,
-            }),
-            "success"
-          );
-        } else {
-          showToast(
-            t("email_invite_team", {
-              email: data.usernameOrEmail,
-            }),
-            "success"
-          );
-        }
+
+      if (Array.isArray(data.usernameOrEmail)) {
+        showToast(
+          t("email_invite_team_bulk", {
+            userCount: data.numUsersInvited,
+          }),
+          "success"
+        );
+      } else {
+        showToast(
+          t("email_invite_team", {
+            email: data.usernameOrEmail,
+          }),
+          "success"
+        );
       }
     },
     onError: (error) => {
@@ -46,9 +47,9 @@ export function InviteMemberModal(props: Props) {
     },
   });
 
-  if (!session?.user.organizationId) return null;
+  const orgId = session?.user.org?.id ?? platformUser?.organizationId;
 
-  const orgId = session.user.organizationId;
+  if (!orgId) return null;
 
   return (
     <MemberInvitationModal
@@ -60,15 +61,15 @@ export function InviteMemberModal(props: Props) {
         });
       }}
       teamId={orgId}
-      isLoading={inviteMemberMutation.isLoading}
+      isOrg={true}
+      isPending={inviteMemberMutation.isPending}
       onSubmit={(values) => {
         inviteMemberMutation.mutate({
           teamId: orgId,
           language: i18n.language,
           role: values.role,
           usernameOrEmail: values.emailOrUsername,
-          sendEmailInvitation: values.sendInviteEmail,
-          isOrg: true,
+          isPlatform: platformUser?.organization.isPlatform,
         });
       }}
     />

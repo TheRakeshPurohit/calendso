@@ -4,12 +4,15 @@ import type { Dispatch } from "react";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import { Button, Dialog, DialogClose, DialogContent, DialogFooter } from "@calcom/ui";
 
-import type { Action, State } from "./UserListTable";
+import type { UserTableAction, UserTableState } from "./types";
 
-export function ImpersonationMemberModal(props: { state: State; dispatch: Dispatch<Action> }) {
+export function ImpersonationMemberModal(props: {
+  state: UserTableState;
+  dispatch: Dispatch<UserTableAction>;
+}) {
   const { t } = useLocale();
   const { data: session } = useSession();
-  const teamId = session?.user.organizationId;
+  const teamId = session?.user.org?.id;
   const user = props.state.impersonateMember.user;
 
   if (!user || !teamId) return null;
@@ -27,7 +30,7 @@ export function ImpersonationMemberModal(props: { state: State; dispatch: Dispat
           onSubmit={async (e) => {
             e.preventDefault();
             await signIn("impersonation-auth", {
-              username: user.username || user.email,
+              username: user.email,
               teamId: teamId,
             });
             props.dispatch({

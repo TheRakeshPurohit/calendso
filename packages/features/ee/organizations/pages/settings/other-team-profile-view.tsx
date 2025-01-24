@@ -1,41 +1,43 @@
+"use client";
+
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { Prisma } from "@prisma/client";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useState, useLayoutEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
-import { IS_TEAM_BILLING_ENABLED, WEBAPP_URL } from "@calcom/lib/constants";
+import { IS_TEAM_BILLING_ENABLED_CLIENT, WEBAPP_URL } from "@calcom/lib/constants";
 import { getPlaceholderAvatar } from "@calcom/lib/defaultAvatarImage";
+import { trackFormbricksAction } from "@calcom/lib/formbricks-client";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
+import { useParamsWithFallback } from "@calcom/lib/hooks/useParamsWithFallback";
 import { md } from "@calcom/lib/markdownIt";
 import { markdownToSafeHTML } from "@calcom/lib/markdownToSafeHTML";
 import objectKeys from "@calcom/lib/objectKeys";
+import slugify from "@calcom/lib/slugify";
 import turndown from "@calcom/lib/turndownService";
-import type { RouterOutputs } from "@calcom/trpc/react";
 import { trpc } from "@calcom/trpc/react";
-import { SkeletonContainer, SkeletonText } from "@calcom/ui";
 import {
   Avatar,
   Button,
   ConfirmationDialogContent,
   Dialog,
   DialogTrigger,
+  Editor,
   Form,
   ImageUploader,
   Label,
   LinkIconButton,
-  Meta,
   showToast,
+  SkeletonContainer,
+  SkeletonText,
   TextField,
-  Editor,
 } from "@calcom/ui";
-import { ExternalLink, Link as LinkIcon, Trash2 } from "@calcom/ui/components/icon";
 
-import { getLayout } from "../../../../settings/layouts/SettingsLayout";
-import { extractDomainFromWebsiteUrl } from "../../../organizations/lib/utils";
+import { subdomainSuffix } from "../../../organizations/lib/orgDomains";
 
 const regex = new RegExp("^[a-zA-Z0-9-]*$");
 
@@ -47,14 +49,14 @@ const teamProfileFormSchema = z.object({
       message: "Url can only have alphanumeric characters(a-z, 0-9) and hyphen(-) symbol.",
     })
     .min(1, { message: "Url cannot be left empty" }),
-  logo: z.string(),
+  logoUrl: z.string().nullable(),
   bio: z.string(),
 });
 
 const OtherTeamProfileView = () => {
   const { t } = useLocale();
   const router = useRouter();
-  const utils = trpc.useContext();
+  const utils = trpc.useUtils();
   const session = useSession();
   const [firstRender, setFirstRender] = useState(true);
 
@@ -75,27 +77,40 @@ const OtherTeamProfileView = () => {
   const form = useForm({
     resolver: zodResolver(teamProfileFormSchema),
   });
-  const searchParams = useSearchParams();
-  const teamId = Number(searchParams.get("id"));
-  const { data: team, isLoading } = trpc.viewer.organizations.getOtherTeam.useQuery(
+  const params = useParamsWithFallback();
+  const teamId = Number(params.id);
+  const {
+    data: team,
+    isPending,
+    error: teamError,
+  } = trpc.viewer.organizations.getOtherTeam.useQuery(
     { teamId: teamId },
     {
-      enabled: !!teamId,
-      onError: () => {
-        router.push("/settings");
-      },
-      onSuccess: (team: RouterOutputs["viewer"]["organizations"]["getOtherTeam"]) => {
-        if (team) {
-          form.setValue("name", team.name || "");
-          form.setValue("slug", team.slug || "");
-          form.setValue("logo", team.logo || "");
-          form.setValue("bio", team.bio || "");
-          if (team.slug === null && (team?.metadata as Prisma.JsonObject)?.requestedSlug) {
-            form.setValue("slug", ((team?.metadata as Prisma.JsonObject)?.requestedSlug as string) || "");
-          }
-        }
-      },
+      enabled: !Number.isNaN(teamId),
     }
+  );
+  useEffect(
+    function refactorMeWithoutEffect() {
+      if (teamError) {
+        router.replace("/enterprise");
+      }
+    },
+    [teamError]
+  );
+
+  useEffect(
+    function refactorMeWithoutEffect() {
+      if (team) {
+        form.setValue("name", team.name || "");
+        form.setValue("slug", team.slug || "");
+        form.setValue("logoUrl", team.logoUrl);
+        form.setValue("bio", team.bio || "");
+        if (team.slug === null && (team?.metadata as Prisma.JsonObject)?.requestedSlug) {
+          form.setValue("slug", ((team?.metadata as Prisma.JsonObject)?.requestedSlug as string) || "");
+        }
+      }
+    },
+    [team]
   );
 
   // This page can only be accessed by team admins (owner/admin)
@@ -105,11 +120,12 @@ const OtherTeamProfileView = () => {
 
   const isBioEmpty = !team || !team.bio || !team.bio.replace("<p><br></p>", "").length;
 
-  const deleteTeamMutation = trpc.viewer.teams.delete.useMutation({
+  const deleteTeamMutation = trpc.viewer.organizations.deleteTeam.useMutation({
     async onSuccess() {
-      await utils.viewer.teams.list.invalidate();
+      await utils.viewer.organizations.listOtherTeams.invalidate();
       showToast(t("your_team_disbanded_successfully"), "success");
       router.push(`${WEBAPP_URL}/teams`);
+      trackFormbricksAction("team_disbanded");
     },
   });
 
@@ -143,8 +159,8 @@ const OtherTeamProfileView = () => {
   function leaveTeam() {
     if (team?.id && session.data)
       removeMemberMutation.mutate({
-        teamId: team.id,
-        memberId: session.data.user.id,
+        teamIds: [team.id],
+        memberIds: [session.data.user.id],
       });
   }
 
@@ -152,8 +168,7 @@ const OtherTeamProfileView = () => {
 
   return (
     <>
-      <Meta title={t("profile")} description={t("profile_team_description")} />
-      {!isLoading ? (
+      {!isPending ? (
         <>
           {isAdmin ? (
             <Form
@@ -161,7 +176,7 @@ const OtherTeamProfileView = () => {
               handleSubmit={(values) => {
                 if (team) {
                   const variables = {
-                    logo: values.logo,
+                    logoUrl: values.logoUrl,
                     name: values.name,
                     slug: values.slug,
                     bio: values.bio,
@@ -175,18 +190,16 @@ const OtherTeamProfileView = () => {
               <div className="flex items-center">
                 <Controller
                   control={form.control}
-                  name="logo"
-                  render={({ field: { value } }) => (
+                  name="logoUrl"
+                  render={({ field: { value, onChange } }) => (
                     <>
-                      <Avatar alt="" imageSrc={getPlaceholderAvatar(value, team?.name as string)} size="lg" />
+                      <Avatar alt="" imageSrc={getPlaceholderAvatar(value, team?.name)} size="lg" />
                       <div className="ms-4">
                         <ImageUploader
-                          target="avatar"
+                          target="logo"
                           id="avatar-upload"
                           buttonMsg={t("update")}
-                          handleAvatarChange={(newLogo) => {
-                            form.setValue("logo", newLogo);
-                          }}
+                          handleAvatarChange={onChange}
                           imageSrc={value}
                         />
                       </div>
@@ -200,15 +213,13 @@ const OtherTeamProfileView = () => {
               <Controller
                 control={form.control}
                 name="name"
-                render={({ field: { value } }) => (
+                render={({ field: { value, onChange } }) => (
                   <div className="mt-8">
                     <TextField
                       name="name"
                       label={t("team_name")}
                       value={value}
-                      onChange={(e) => {
-                        form.setValue("name", e?.target.value);
-                      }}
+                      onChange={(e) => onChange(e?.target.value)}
                     />
                   </div>
                 )}
@@ -216,20 +227,18 @@ const OtherTeamProfileView = () => {
               <Controller
                 control={form.control}
                 name="slug"
-                render={({ field: { value } }) => (
+                render={({ field: { value, onChange } }) => (
                   <div className="mt-8">
                     <TextField
                       name="slug"
                       label={t("team_url")}
                       value={value}
                       addOnLeading={
-                        team?.parent
-                          ? `${team.parent.slug}.${extractDomainFromWebsiteUrl}/`
-                          : `${WEBAPP_URL}/team/`
+                        team?.parent ? `${team.parent.slug}.${subdomainSuffix()}/` : `${WEBAPP_URL}/team/`
                       }
                       onChange={(e) => {
                         form.clearErrors("slug");
-                        form.setValue("slug", e?.target.value);
+                        onChange(slugify(e?.target.value, true));
                       }}
                     />
                   </div>
@@ -244,13 +253,14 @@ const OtherTeamProfileView = () => {
                   disableLists
                   firstRender={firstRender}
                   setFirstRender={setFirstRender}
+                  height="80px"
                 />
               </div>
               <p className="text-default mt-2 text-sm">{t("team_description")}</p>
-              <Button color="primary" className="mt-8" type="submit" loading={mutation.isLoading}>
+              <Button color="primary" className="mt-8" type="submit" loading={mutation.isPending}>
                 {t("update")}
               </Button>
-              {IS_TEAM_BILLING_ENABLED &&
+              {IS_TEAM_BILLING_ENABLED_CLIENT &&
                 team.slug === null &&
                 (team.metadata as Prisma.JsonObject)?.requestedSlug && (
                   <Button
@@ -276,17 +286,18 @@ const OtherTeamProfileView = () => {
                     <Label className="text-emphasis mt-5">{t("about")}</Label>
                     <div
                       className="  text-subtle break-words text-sm [&_a]:text-blue-500 [&_a]:underline [&_a]:hover:text-blue-600"
-                      dangerouslySetInnerHTML={{ __html: md.render(markdownToSafeHTML(team.bio)) }}
+                      // eslint-disable-next-line react/no-danger
+                      dangerouslySetInnerHTML={{ __html: markdownToSafeHTML(team.bio) }}
                     />
                   </>
                 )}
               </div>
               <div className="">
                 <Link href={permalink} passHref={true} target="_blank">
-                  <LinkIconButton Icon={ExternalLink}>{t("preview")}</LinkIconButton>
+                  <LinkIconButton Icon="external-link">{t("preview")}</LinkIconButton>
                 </Link>
                 <LinkIconButton
-                  Icon={LinkIcon}
+                  Icon="link"
                   onClick={() => {
                     navigator.clipboard.writeText(permalink);
                     showToast("Copied to clipboard", "success");
@@ -302,7 +313,7 @@ const OtherTeamProfileView = () => {
 
           <Dialog>
             <DialogTrigger asChild>
-              <Button color="destructive" className="border" StartIcon={Trash2}>
+              <Button color="destructive" className="border" StartIcon="trash-2">
                 {t("disband_team")}
               </Button>
             </DialogTrigger>
@@ -310,7 +321,9 @@ const OtherTeamProfileView = () => {
               variety="danger"
               title={t("disband_team")}
               confirmBtnText={t("confirm_disband_team")}
-              onConfirm={deleteTeam}>
+              onConfirm={() => {
+                deleteTeam();
+              }}>
               {t("disband_team_confirmation_message")}
             </ConfirmationDialogContent>
           </Dialog>
@@ -353,7 +366,5 @@ const OtherTeamProfileView = () => {
     </>
   );
 };
-
-OtherTeamProfileView.getLayout = getLayout;
 
 export default OtherTeamProfileView;
