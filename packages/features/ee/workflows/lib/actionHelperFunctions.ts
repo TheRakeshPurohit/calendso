@@ -30,6 +30,14 @@ export function isSMSOrWhatsappAction(action: WorkflowActions) {
   return isSMSAction(action) || isWhatsappAction(action);
 }
 
+export function isEmailAction(action: WorkflowActions) {
+  return (
+    action === WorkflowActions.EMAIL_ADDRESS ||
+    action === WorkflowActions.EMAIL_ATTENDEE ||
+    action === WorkflowActions.EMAIL_HOST
+  );
+}
+
 export function isAttendeeAction(action: WorkflowActions) {
   return (
     action === WorkflowActions.SMS_ATTENDEE ||
@@ -38,8 +46,12 @@ export function isAttendeeAction(action: WorkflowActions) {
   );
 }
 
-export function isTextMessageToAttendeeAction(action?: WorkflowActions) {
-  return action === WorkflowActions.SMS_ATTENDEE || action === WorkflowActions.WHATSAPP_ATTENDEE;
+export function isEmailToAttendeeAction(action: WorkflowActions) {
+  return action === WorkflowActions.EMAIL_ATTENDEE;
+}
+
+export function isTextMessageToSpecificNumber(action?: WorkflowActions) {
+  return action === WorkflowActions.SMS_NUMBER || action === WorkflowActions.WHATSAPP_NUMBER;
 }
 
 export function getWhatsappTemplateForTrigger(trigger: WorkflowTriggerEvents): WorkflowTemplates {
@@ -58,7 +70,7 @@ export function getWhatsappTemplateForTrigger(trigger: WorkflowTriggerEvents): W
   }
 }
 
-export function getWhatsappTemplateFunction(template: WorkflowTemplates): typeof whatsappReminderTemplate {
+export function getWhatsappTemplateFunction(template?: WorkflowTemplates): typeof whatsappReminderTemplate {
   switch (template) {
     case "CANCELLED":
       return whatsappEventCancelledTemplate;
@@ -76,9 +88,10 @@ export function getWhatsappTemplateFunction(template: WorkflowTemplates): typeof
 
 export function getWhatsappTemplateForAction(
   action: WorkflowActions,
+  locale: string,
   template: WorkflowTemplates,
   timeFormat: TimeFormat
 ): string | null {
   const templateFunction = getWhatsappTemplateFunction(template);
-  return templateFunction(true, action, timeFormat);
+  return templateFunction(true, locale, action, timeFormat);
 }

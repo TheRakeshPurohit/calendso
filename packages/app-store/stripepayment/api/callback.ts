@@ -2,9 +2,9 @@ import type { Prisma } from "@prisma/client";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { stringify } from "querystring";
 
-import createOAuthAppCredential from "../../_utils/createOAuthAppCredential";
-import { decodeOAuthState } from "../../_utils/decodeOAuthState";
 import getInstalledAppPath from "../../_utils/getInstalledAppPath";
+import createOAuthAppCredential from "../../_utils/oauth/createOAuthAppCredential";
+import { decodeOAuthState } from "../../_utils/oauth/decodeOAuthState";
 import type { StripeData } from "../lib/server";
 import stripe from "../lib/server";
 
@@ -20,18 +20,21 @@ function getReturnToValueFromQueryState(req: NextApiRequest) {
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { code, error, error_description } = req.query;
+  const state = decodeOAuthState(req);
 
   if (error) {
+    // User cancels flow
+    if (error === "access_denied") {
+      state?.onErrorReturnTo ? res.redirect(state.onErrorReturnTo) : res.redirect("/apps/installed/payment");
+    }
     const query = stringify({ error, error_description });
-    res.redirect("/apps/installed?" + query);
+    res.redirect(`/apps/installed?${query}`);
     return;
   }
 
   if (!req.session?.user?.id) {
     return res.status(401).json({ message: "You must be logged in to do this" });
   }
-
-  const state = decodeOAuthState(req);
 
   const response = await stripe.oauth.token({
     grant_type: "authorization_code",

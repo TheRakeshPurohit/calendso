@@ -3,10 +3,11 @@ import { useMemo } from "react";
 import type { Slots } from "./types";
 
 /**
- * Get's slots for a specific date from the schedul cache.
+ * Get's slots for a specific date from the schedule cache.
  * @param date Format YYYY-MM-DD
  * @param scheduleCache Instance of useScheduleWithCache
  */
+
 export const useSlotsForDate = (date: string | null, slots?: Slots) => {
   const slotsForDate = useMemo(() => {
     if (!date || typeof slots === "undefined") return [];
@@ -16,9 +17,9 @@ export const useSlotsForDate = (date: string | null, slots?: Slots) => {
   return slotsForDate;
 };
 
-export const useSlotsForMultipleDates = (dates: (string | null)[], slots?: Slots) => {
+export const useSlotsForAvailableDates = (dates: (string | null)[], slots?: Slots) => {
   const slotsForDates = useMemo(() => {
-    if (typeof slots === "undefined") return [];
+    if (slots === undefined) return [];
     return dates
       .filter((date) => date !== null)
       .map((date) => ({
@@ -26,6 +27,5 @@ export const useSlotsForMultipleDates = (dates: (string | null)[], slots?: Slots
         date,
       }));
   }, [dates, slots]);
-
   return slotsForDates;
 };

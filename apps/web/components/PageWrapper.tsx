@@ -1,3 +1,5 @@
+"use client";
+
 import { DefaultSeo } from "next-seo";
 import { Inter } from "next/font/google";
 import localFont from "next/font/local";
@@ -8,12 +10,13 @@ import "@calcom/embed-core/src/embed-iframe";
 import LicenseRequired from "@calcom/features/ee/common/components/LicenseRequired";
 import { IS_CALCOM, WEBAPP_URL } from "@calcom/lib/constants";
 import { buildCanonical } from "@calcom/lib/next-seo.config";
+import { IconSprites } from "@calcom/ui";
 
 import type { AppProps } from "@lib/app-providers";
 import AppProviders from "@lib/app-providers";
 import { seoConfig } from "@lib/config/next-seo.config";
 
-import I18nLanguageHandler from "@components/I18nLanguageHandler";
+import { GoogleTagManagerComponent } from "@components/GTM";
 
 export interface CalPageWrapper {
   (props?: AppProps): JSX.Element;
@@ -26,6 +29,7 @@ const calFont = localFont({
   variable: "--font-cal",
   preload: true,
   display: "swap",
+  weight: "600",
 });
 
 function PageWrapper(props: AppProps) {
@@ -36,6 +40,8 @@ function PageWrapper(props: AppProps) {
     pageStatus = "404";
   } else if (router.pathname === "/500") {
     pageStatus = "500";
+  } else if (router.pathname === "/403") {
+    pageStatus = "403";
   }
 
   // On client side don't let nonce creep into DOM
@@ -60,7 +66,7 @@ function PageWrapper(props: AppProps) {
       <Head>
         <meta
           name="viewport"
-          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0"
+          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover"
         />
       </Head>
       <DefaultSeo
@@ -72,18 +78,22 @@ function PageWrapper(props: AppProps) {
         }
         {...seoConfig.defaultNextSeo}
       />
-      <I18nLanguageHandler locales={props.router.locales || []} />
       <Script
         nonce={nonce}
         id="page-status"
+        // It is strictly not necessary to disable, but in a future update of react/no-danger this will error.
+        // And we don't want it to error here anyways
+        // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: `window.CalComPageStatus = '${pageStatus}'` }}
       />
+
       <style jsx global>{`
         :root {
           --font-inter: ${interFont.style.fontFamily};
           --font-cal: ${calFont.style.fontFamily};
         }
       `}</style>
+      <IconSprites />
 
       {getLayout(
         Component.requiresLicense ? (
@@ -92,9 +102,9 @@ function PageWrapper(props: AppProps) {
           </LicenseRequired>
         ) : (
           <Component {...pageProps} err={err} />
-        ),
-        router
+        )
       )}
+      <GoogleTagManagerComponent />
     </AppProviders>
   );
 }

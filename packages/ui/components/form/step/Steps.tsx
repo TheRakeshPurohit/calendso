@@ -1,17 +1,30 @@
 import classNames from "@calcom/lib/classNames";
 
-interface ISteps {
+type StepWithNav = {
   maxSteps: number;
   currentStep: number;
-  navigateToStep: (step: number) => void;
+  nextStep: () => void;
+  disableNavigation?: false;
   stepLabel?: (currentStep: number, maxSteps: number) => string;
-}
+};
 
-const Steps = (props: ISteps) => {
+type StepWithoutNav = {
+  maxSteps: number;
+  currentStep: number;
+  nextStep?: undefined;
+  disableNavigation: true;
+  stepLabel?: (currentStep: number, maxSteps: number) => string;
+};
+
+// Discriminative union on disableNavigation prop
+type StepsProps = StepWithNav | StepWithoutNav;
+
+const Steps = (props: StepsProps) => {
   const {
     maxSteps,
     currentStep,
-    navigateToStep,
+    nextStep,
+    disableNavigation = false,
     stepLabel = (currentStep, totalSteps) => `Step ${currentStep} of ${totalSteps}`,
   } = props;
   return (
@@ -22,10 +35,10 @@ const Steps = (props: ISteps) => {
           return index <= currentStep - 1 ? (
             <div
               key={`step-${index}`}
-              onClick={() => navigateToStep(index)}
+              onClick={() => nextStep?.()}
               className={classNames(
                 "bg-inverted h-1 w-full rounded-[1px]",
-                index < currentStep - 1 ? "cursor-pointer" : ""
+                index < currentStep - 1 && !disableNavigation ? "cursor-pointer" : ""
               )}
               data-testid={`step-indicator-${index}`}
             />

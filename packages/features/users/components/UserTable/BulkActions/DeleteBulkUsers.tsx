@@ -1,23 +1,36 @@
-import { BanIcon } from "lucide-react";
-
+import { DataTableSelectionBar } from "@calcom/features/data-table";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import { trpc } from "@calcom/trpc/react";
-import { Dialog, DialogTrigger, ConfirmationDialogContent, Button, showToast } from "@calcom/ui";
+import { ConfirmationDialogContent, Dialog, DialogTrigger, showToast } from "@calcom/ui";
 
-import type { User } from "../UserListTable";
+import type { UserTableUser } from "../types";
 
 interface Props {
-  users: User[];
+  users: Array<{ id: UserTableUser["id"] }>;
+  onRemove: () => void;
 }
 
-export function DeleteBulkUsers({ users }: Props) {
+export function DeleteBulkUsers({ users, onRemove }: Props) {
   const { t } = useLocale();
   const selectedRows = users; // Get selected rows from table
-  const utils = trpc.useContext();
+  const utils = trpc.useUtils();
   const deleteMutation = trpc.viewer.organizations.bulkDeleteUsers.useMutation({
-    onSuccess: () => {
-      utils.viewer.organizations.listMembers.invalidate();
+    onSuccess: (_, { userIds }) => {
       showToast("Deleted Users", "success");
+      utils.viewer.organizations.listMembers.setInfiniteData(
+        { limit: 10, searchTerm: "", expand: ["attributes"] },
+        // @ts-expect-error - infinite data types are not correct
+        (oldData) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            pages: oldData.pages.map((page) => ({
+              ...page,
+              rows: page.rows.filter((user) => !userIds.includes(user.id)),
+            })),
+          };
+        }
+      );
     },
     onError: (error) => {
       showToast(error.message, "error");
@@ -26,17 +39,18 @@ export function DeleteBulkUsers({ users }: Props) {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button StartIcon={BanIcon}>{t("Delete")}</Button>
+        <DataTableSelectionBar.Button icon="ban">{t("Delete")}</DataTableSelectionBar.Button>
       </DialogTrigger>
       <ConfirmationDialogContent
         variety="danger"
         title={t("remove_users_from_org")}
         confirmBtnText={t("remove")}
-        isLoading={deleteMutation.isLoading}
+        isPending={deleteMutation.isPending}
         onConfirm={() => {
           deleteMutation.mutateAsync({
             userIds: selectedRows.map((user) => user.id),
           });
+          onRemove();
         }}>
         <p className="mt-5">
           {t("remove_users_from_org_confirm", {

@@ -1,6 +1,5 @@
 import { getPlaceholderAvatar } from "@calcom/lib/defaultAvatarImage";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
-import { MembershipRole } from "@calcom/prisma/enums";
 import type { RouterOutputs } from "@calcom/trpc/react";
 import {
   Avatar,
@@ -13,12 +12,10 @@ import {
   DropdownItem,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
   showToast,
   Tooltip,
 } from "@calcom/ui";
-import { Edit2, ExternalLink, Link as LinkIcon, MoreHorizontal, Trash } from "@calcom/ui/components/icon";
 
 import { useOrgBranding } from "../../../organizations/context/provider";
 
@@ -26,7 +23,7 @@ interface Props {
   team: RouterOutputs["viewer"]["organizations"]["listOtherTeams"][number];
   key: number;
   onActionSelect: (text: string) => void;
-  isLoading?: boolean;
+  isPending?: boolean;
   hideDropdown: boolean;
   setHideDropdown: (value: boolean) => void;
 }
@@ -38,8 +35,6 @@ export default function OtherTeamListItem(props: Props) {
 
   const orgBranding = useOrgBranding();
 
-  const isOwner = props.team.role === MembershipRole.OWNER;
-
   const { hideDropdown, setHideDropdown } = props;
 
   if (!team) return <></>;
@@ -48,7 +43,7 @@ export default function OtherTeamListItem(props: Props) {
     <div className="item-center flex px-5 py-5">
       <Avatar
         size="md"
-        imageSrc={getPlaceholderAvatar(team?.logo, team?.name as string)}
+        imageSrc={getPlaceholderAvatar(team.logoUrl, team.name)}
         alt="Team Logo"
         className="inline-flex justify-center"
       />
@@ -67,7 +62,7 @@ export default function OtherTeamListItem(props: Props) {
 
   return (
     <li>
-      <div className="hover:bg-muted group flex items-center justify-between">
+      <div className="hover:bg-muted group flex items-center justify-between transition">
         {teamInfo}
         <div className="px-5 py-5">
           <div className="flex space-x-2 rtl:space-x-reverse">
@@ -81,13 +76,13 @@ export default function OtherTeamListItem(props: Props) {
                         `${
                           orgBranding
                             ? `${orgBranding.fullDomain}`
-                            : process.env.NEXT_PUBLIC_WEBSITE_URL + "/team"
+                            : `${process.env.NEXT_PUBLIC_WEBSITE_URL}/team`
                         }/${team.slug}`
                       );
                       showToast(t("link_copied"), "success");
                     }}
                     variant="icon"
-                    StartIcon={LinkIcon}
+                    StartIcon="link"
                   />
                 </Tooltip>
               )}
@@ -98,15 +93,15 @@ export default function OtherTeamListItem(props: Props) {
                     type="button"
                     color="secondary"
                     variant="icon"
-                    StartIcon={MoreHorizontal}
+                    StartIcon="ellipsis"
                   />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent hidden={hideDropdown}>
                   <DropdownMenuItem>
                     <DropdownItem
                       type="button"
-                      href={"/settings/teams/other/" + team.id + "/profile"}
-                      StartIcon={Edit2}>
+                      href={`/settings/teams/other/${team.id}/profile`}
+                      StartIcon="pencil">
                       {t("edit_team") as string}
                     </DropdownItem>
                   </DropdownMenuItem>
@@ -121,40 +116,37 @@ export default function OtherTeamListItem(props: Props) {
                             ? `${orgBranding.fullDomain}`
                             : `${process.env.NEXT_PUBLIC_WEBSITE_URL}/team/other`
                         }/${team.slug}`}
-                        StartIcon={ExternalLink}>
+                        StartIcon="external-link">
                         {t("preview_team") as string}
                       </DropdownItem>
                     </DropdownMenuItem>
                   )}
 
-                  <DropdownMenuSeparator />
-                  {isOwner && (
-                    <DropdownMenuItem>
-                      <Dialog open={hideDropdown} onOpenChange={setHideDropdown}>
-                        <DialogTrigger asChild>
-                          <DropdownItem
-                            color="destructive"
-                            type="button"
-                            StartIcon={Trash}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                            }}>
-                            {t("disband_team")}
-                          </DropdownItem>
-                        </DialogTrigger>
-                        <ConfirmationDialogContent
-                          variety="danger"
-                          title={t("disband_team")}
-                          confirmBtnText={t("confirm_disband_team")}
-                          isLoading={props.isLoading}
-                          onConfirm={() => {
-                            props.onActionSelect("disband");
+                  <DropdownMenuItem>
+                    <Dialog open={hideDropdown} onOpenChange={setHideDropdown}>
+                      <DialogTrigger asChild>
+                        <DropdownItem
+                          color="destructive"
+                          type="button"
+                          StartIcon="trash"
+                          onClick={(e) => {
+                            e.stopPropagation();
                           }}>
-                          {t("disband_team_confirmation_message")}
-                        </ConfirmationDialogContent>
-                      </Dialog>
-                    </DropdownMenuItem>
-                  )}
+                          {t("disband_team")}
+                        </DropdownItem>
+                      </DialogTrigger>
+                      <ConfirmationDialogContent
+                        variety="danger"
+                        title={t("disband_team")}
+                        confirmBtnText={t("confirm_disband_team")}
+                        isPending={props.isPending}
+                        onConfirm={() => {
+                          props.onActionSelect("disband");
+                        }}>
+                        {t("disband_team_confirmation_message")}
+                      </ConfirmationDialogContent>
+                    </Dialog>
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </Dropdown>
             </ButtonGroup>

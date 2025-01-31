@@ -8,7 +8,8 @@ import classNames from "@calcom/lib/classNames";
 import { getErrorFromUnknown } from "@calcom/lib/errors";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 
-import { Alert, showToast } from "../";
+import { Alert } from "../components/alert";
+import { showToast } from "../components/toast";
 
 type InputProps = Omit<JSX.IntrinsicElements["input"], "name"> & { name: string };
 
@@ -56,8 +57,8 @@ const InputField = forwardRef<HTMLInputElement, InputFieldProps>(function InputF
   const {
     label = t(props.name),
     labelProps,
-    placeholder = t(props.name + "_placeholder") !== props.name + "_placeholder"
-      ? t(props.name + "_placeholder")
+    placeholder = t(`${props.name}_placeholder`) !== `${props.name}_placeholder`
+      ? t(`${props.name}_placeholder`)
       : "",
     className,
     addOnLeading,
@@ -169,8 +170,8 @@ export const TextAreaField = forwardRef<HTMLTextAreaElement, TextAreaFieldProps>
   const {
     label = t(props.name as string),
     labelProps,
-    placeholder = t(props.name + "_placeholder") !== props.name + "_placeholder"
-      ? t(props.name + "_placeholder")
+    placeholder = t(`${props.name}_placeholder`) !== `${props.name}_placeholder`
+      ? t(`${props.name}_placeholder`)
       : "",
     ...passThrough
   } = props;

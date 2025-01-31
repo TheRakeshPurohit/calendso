@@ -1,6 +1,7 @@
 import type { TFunction } from "next-i18next";
 
 import dayjs from "@calcom/dayjs";
+import { formatPrice } from "@calcom/lib/price";
 import { TimeFormat } from "@calcom/lib/timeFormat";
 import type { CalendarEvent, Person } from "@calcom/types/Calendar";
 
@@ -14,6 +15,7 @@ import {
   AppsStatus,
   UserFieldsResponses,
 } from "../components";
+import { PersonInfo } from "../components/WhoInfo";
 
 export const BaseScheduledEmail = (
   props: {
@@ -24,6 +26,8 @@ export const BaseScheduledEmail = (
     t: TFunction;
     locale: string;
     timeFormat: TimeFormat | undefined;
+    isOrganizer?: boolean;
+    reassigned?: { name: string | null; email: string; reason?: string; byUser?: string };
   } & Partial<React.ComponentProps<typeof BaseEmailHtml>>
 ) => {
   const { t, timeZone, locale, timeFormat: timeFormat_ } = props;
@@ -48,6 +52,7 @@ export const BaseScheduledEmail = (
 
   return (
     <BaseEmailHtml
+      hideLogo={Boolean(props.calEvent.platformClientId)}
       headerType={props.headerType || "checkCircle"}
       subject={props.subject || subject}
       title={t(
@@ -76,7 +81,25 @@ export const BaseScheduledEmail = (
           withSpacer
         />
       )}
-      <Info label={t("rejection_reason")} description={props.calEvent.rejectionReason} withSpacer />
+      {props.reassigned && !props.reassigned.byUser && (
+        <>
+          <Info
+            label={t("reassigned_to")}
+            description={
+              <PersonInfo name={props.reassigned.name || undefined} email={props.reassigned.email} />
+            }
+            withSpacer
+          />
+        </>
+      )}
+      {props.reassigned && props.reassigned.byUser && (
+        <>
+          <Info label={t("reassigned_by")} description={props.reassigned.byUser} withSpacer />
+          {props.reassigned?.reason && (
+            <Info label={t("reason")} description={props.reassigned.reason} withSpacer />
+          )}
+        </>
+      )}
       <Info label={t("what")} description={props.calEvent.title} withSpacer />
       <WhenInfo timeFormat={timeFormat} calEvent={props.calEvent} t={t} timeZone={timeZone} locale={locale} />
       <WhoInfo calEvent={props.calEvent} t={t} />
@@ -84,14 +107,15 @@ export const BaseScheduledEmail = (
       <Info label={t("description")} description={props.calEvent.description} withSpacer formatted />
       <Info label={t("additional_notes")} description={props.calEvent.additionalNotes} withSpacer />
       {props.includeAppsStatus && <AppsStatus calEvent={props.calEvent} t={t} />}
-      <UserFieldsResponses calEvent={props.calEvent} />
+      <UserFieldsResponses t={t} calEvent={props.calEvent} isOrganizer={props.isOrganizer} />
       {props.calEvent.paymentInfo?.amount && (
         <Info
-          label={props.calEvent.paymentInfo?.paymentOption === "HOLD" ? t("no_show_fee") : t("price")}
-          description={new Intl.NumberFormat(props.attendee.language.locale, {
-            style: "currency",
-            currency: props.calEvent.paymentInfo?.currency || "USD",
-          }).format(props.calEvent.paymentInfo?.amount / 100.0)}
+          label={props.calEvent.paymentInfo.paymentOption === "HOLD" ? t("no_show_fee") : t("price")}
+          description={formatPrice(
+            props.calEvent.paymentInfo.amount,
+            props.calEvent.paymentInfo.currency,
+            props.attendee.language.locale
+          )}
           withSpacer
         />
       )}

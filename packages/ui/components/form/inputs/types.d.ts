@@ -17,6 +17,9 @@ export type InputFieldProps = {
   containerClassName?: string;
   showAsteriskIndicator?: boolean;
   t?: (key: string) => string;
+  dataTestid?: string;
+  noLabel?: boolean;
+  onClickAddon?: () => void;
 } & React.ComponentProps<typeof Input> & {
     labelProps?: React.ComponentProps<typeof Label>;
     labelClassName?: string;

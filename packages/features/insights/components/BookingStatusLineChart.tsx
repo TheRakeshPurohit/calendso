@@ -1,5 +1,6 @@
 import { Title } from "@tremor/react";
 
+import dayjs from "@calcom/dayjs";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import { trpc } from "@calcom/trpc";
 
@@ -19,7 +20,9 @@ export const BookingStatusLineChart = () => {
     dateRange,
     selectedEventTypeId,
     isAll,
+    initialConfig,
   } = filter;
+  const initialConfigIsReady = !!(initialConfig?.teamId || initialConfig?.userId || initialConfig?.isAll);
   const [startDate, endDate] = dateRange;
 
   if (!startDate || !endDate) return null;
@@ -27,12 +30,12 @@ export const BookingStatusLineChart = () => {
   const {
     data: eventsTimeLine,
     isSuccess,
-    isLoading,
+    isPending,
   } = trpc.viewer.insights.eventsTimeline.useQuery(
     {
       timeView: selectedTimeView,
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString(),
+      startDate: dayjs.utc(startDate).toISOString(),
+      endDate: dayjs.utc(endDate).toISOString(),
       teamId: selectedTeamId ?? undefined,
       eventTypeId: selectedEventTypeId ?? undefined,
       userId: selectedUserId ?? undefined,
@@ -43,10 +46,11 @@ export const BookingStatusLineChart = () => {
       trpc: {
         context: { skipBatch: true },
       },
+      enabled: initialConfigIsReady,
     }
   );
 
-  if (isLoading) return <LoadingInsight />;
+  if (isPending) return <LoadingInsight />;
 
   if (!isSuccess) return null;
 
@@ -56,9 +60,9 @@ export const BookingStatusLineChart = () => {
       <LineChart
         className="linechart mt-4 h-80"
         data={eventsTimeLine ?? []}
-        categories={["Created", "Completed", "Rescheduled", "Cancelled"]}
+        categories={["Created", "Completed", "Rescheduled", "Cancelled", "No-Show (Host)", "No-Show (Guest)"]}
         index="Month"
-        colors={["purple", "green", "blue", "red"]}
+        colors={["purple", "green", "blue", "red", "slate", "orange"]}
         valueFormatter={valueFormatter}
       />
     </CardInsights>

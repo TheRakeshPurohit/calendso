@@ -1,3 +1,5 @@
+"use client";
+
 import { isSupportedCountry } from "libphonenumber-js";
 import { useState, useEffect } from "react";
 import PhoneInput from "react-phone-input-2";
@@ -17,21 +19,11 @@ export type PhoneInputProps = {
   onChange: (value: string) => void;
 };
 
-function BasePhoneInput({ name, className = "", onChange, ...rest }: PhoneInputProps) {
-  useEffect(() => {
-    if (!rest.value) {
-      return;
-    }
-    const formattedValue = rest.value.trim().replace(/^\+?/, "+");
-    onChange(formattedValue);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const defaultCountry = useDefaultCountry();
+function BasePhoneInput({ name, className = "", onChange, value, ...rest }: PhoneInputProps) {
   return (
     <PhoneInput
       {...rest}
-      country={rest.value ? undefined : defaultCountry}
+      value={value ? value.trim().replace(/^\+?/, "+") : undefined}
       enableSearch
       disableSearchIcon
       inputProps={{
@@ -40,13 +32,13 @@ function BasePhoneInput({ name, className = "", onChange, ...rest }: PhoneInputP
         placeholder: rest.placeholder,
       }}
       onChange={(value) => {
-        onChange("+" + value);
+        onChange(`+${value}`);
       }}
       containerClass={classNames(
         "hover:border-emphasis dark:focus:border-emphasis border-default !bg-default rounded-md border focus-within:outline-none focus-within:ring-2 focus-within:ring-brand-default disabled:cursor-not-allowed",
         className
       )}
-      inputClass="text-sm focus:ring-0 !bg-default text-default"
+      inputClass="text-sm focus:ring-0 !bg-default text-default placeholder:text-muted"
       buttonClass="text-emphasis !bg-default hover:!bg-emphasis"
       searchClass="!text-default !bg-default hover:!bg-emphasis"
       dropdownClass="!text-default !bg-default"
@@ -68,11 +60,15 @@ function BasePhoneInput({ name, className = "", onChange, ...rest }: PhoneInputP
 
 const useDefaultCountry = () => {
   const [defaultCountry, setDefaultCountry] = useState("us");
-  trpc.viewer.public.countryCode.useQuery(undefined, {
+  const query = trpc.viewer.public.countryCode.useQuery(undefined, {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     retry: false,
-    onSuccess: (data) => {
+  });
+
+  useEffect(
+    function refactorMeWithoutEffect() {
+      const data = query.data;
       if (!data?.countryCode) {
         return;
       }
@@ -81,7 +77,8 @@ const useDefaultCountry = () => {
         ? setDefaultCountry(data.countryCode.toLowerCase())
         : setDefaultCountry(navigator.language.split("-")[1]?.toLowerCase() || "us");
     },
-  });
+    [query.data]
+  );
 
   return defaultCountry;
 };
