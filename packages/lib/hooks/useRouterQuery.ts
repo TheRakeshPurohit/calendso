@@ -1,10 +1,16 @@
-import { useSearchParams } from "next/navigation";
+import { useCompatSearchParams } from "@calcom/lib/hooks/useCompatSearchParams";
 
 /**
  * An alternative to Object.fromEntries that allows duplicate keys.
+ * There is a duplicate of the function in @calcom/embeds/embed-core/src/utils.ts. Keep them in sync.
  */
-function fromEntriesWithDuplicateKeys(entries: ReturnType<ReturnType<typeof useSearchParams>["entries"]>) {
+function fromEntriesWithDuplicateKeys(entries: IterableIterator<[string, string]> | null) {
   const result: Record<string, string | string[]> = {};
+
+  if (entries === null) {
+    return result;
+  }
+
   // Consider setting atleast ES2015 as target
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore
@@ -30,7 +36,7 @@ function fromEntriesWithDuplicateKeys(entries: ReturnType<ReturnType<typeof useS
  * @returns {Object} routerQuery
  */
 export const useRouterQuery = () => {
-  const searchParams = useSearchParams();
-  const routerQuery = fromEntriesWithDuplicateKeys(searchParams.entries());
+  const searchParams = useCompatSearchParams();
+  const routerQuery = fromEntriesWithDuplicateKeys(searchParams?.entries() ?? null);
   return routerQuery;
 };

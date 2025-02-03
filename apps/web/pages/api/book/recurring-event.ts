@@ -1,59 +1,38 @@
-import type { NextApiRequest, NextApiResponse } from "next";
+import type { NextApiRequest } from "next";
 
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
-import handleNewBooking from "@calcom/features/bookings/lib/handleNewBooking";
-import type { BookingResponse, RecurringBookingCreateBody } from "@calcom/features/bookings/types";
+import { handleNewRecurringBooking } from "@calcom/features/bookings/lib/handleNewRecurringBooking";
+import type { BookingResponse } from "@calcom/features/bookings/types";
+import { checkRateLimitAndThrowError } from "@calcom/lib/checkRateLimitAndThrowError";
+import getIP from "@calcom/lib/getIP";
 import { defaultResponder } from "@calcom/lib/server";
-import type { AppsStatus } from "@calcom/types/Calendar";
+import { checkCfTurnstileToken } from "@calcom/lib/server/checkCfTurnstileToken";
 
 // @TODO: Didn't look at the contents of this function in order to not break old booking page.
 
-async function handler(req: NextApiRequest & { userId?: number }, res: NextApiResponse) {
-  const data: RecurringBookingCreateBody[] = req.body;
-  const session = await getServerSession({ req, res });
-  const createdBookings: BookingResponse[] = [];
-  const allRecurringDates: string[] = data.map((booking) => booking.start);
-  let appsStatus: AppsStatus[] | undefined = undefined;
+async function handler(req: NextApiRequest & { userId?: number }) {
+  const userIp = getIP(req);
 
+  if (process.env.NEXT_PUBLIC_CLOUDFLARE_USE_TURNSTILE_IN_BOOKER === "1") {
+    await checkCfTurnstileToken({
+      token: req.body[0]["cfToken"] as string,
+      remoteIp: userIp,
+    });
+  }
+
+  await checkRateLimitAndThrowError({
+    rateLimitingType: "core",
+    identifier: userIp,
+  });
+  const session = await getServerSession({ req });
   /* To mimic API behavior and comply with types */
   req.userId = session?.user?.id || -1;
 
-  // Reversing to accumulate results for noEmail instances first, to then lastly, create the
-  // emailed booking taking into account accumulated results to send app status accurately
-  for (let key = data.length - 1; key >= 0; key--) {
-    const booking = data[key];
-    if (key === 0) {
-      const calcAppsStatus: { [key: string]: AppsStatus } = createdBookings
-        .flatMap((book) => (book.appsStatus !== undefined ? book.appsStatus : []))
-        .reduce((prev, curr) => {
-          if (prev[curr.type]) {
-            prev[curr.type].failures += curr.failures;
-            prev[curr.type].success += curr.success;
-          } else {
-            prev[curr.type] = curr;
-          }
-          return prev;
-        }, {} as { [key: string]: AppsStatus });
-      appsStatus = Object.values(calcAppsStatus);
-    }
+  const createdBookings: BookingResponse[] = await handleNewRecurringBooking(req);
 
-    const recurringEventReq: NextApiRequest & { userId?: number } = req;
-
-    recurringEventReq.body = {
-      ...booking,
-      appsStatus,
-      allRecurringDates,
-      currentRecurringIndex: key,
-      noEmail: key !== 0,
-    };
-
-    const eachRecurringBooking = await handleNewBooking(recurringEventReq, {
-      isNotAnApiCall: true,
-    });
-
-    createdBookings.push(eachRecurringBooking);
-  }
   return createdBookings;
 }
+
+export const handleRecurringEventBooking = handler;
 
 export default defaultResponder(handler);

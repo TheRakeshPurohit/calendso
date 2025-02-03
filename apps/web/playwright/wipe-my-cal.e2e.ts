@@ -1,6 +1,6 @@
 import { expect } from "@playwright/test";
 
-import dayjs from "@calcom/dayjs";
+import _dayjs from "@calcom/dayjs";
 import prisma from "@calcom/prisma";
 
 import { test } from "./lib/fixtures";
@@ -8,6 +8,9 @@ import { test } from "./lib/fixtures";
 test.describe.configure({ mode: "parallel" });
 
 test.afterEach(({ users }) => users.deleteAll());
+
+// We default all dayjs calls to use Europe/London timezone
+const dayjs = (...args: Parameters<typeof _dayjs>) => _dayjs(...args).tz("Europe/London");
 
 test.describe("Wipe my Cal App Test", () => {
   test("Browse upcoming bookings and validate button shows and triggering wipe my cal button", async ({
@@ -39,9 +42,9 @@ test.describe("Wipe my Cal App Test", () => {
     await page.goto("/bookings/upcoming");
     await expect(page.locator("data-testid=wipe-today-button")).toBeVisible();
 
-    const $openBookingCount = await page.locator('[data-testid="bookings"] > *').count();
-    const $todayBookingCount = await page.locator('[data-testid="today-bookings"] > *').count();
-    expect($openBookingCount + $todayBookingCount).toBe(3);
+    const $nonTodayBookingCount = await page.locator('[data-today="false"]').count();
+    const $todayBookingCount = await page.locator('[data-today="true"]').count();
+    expect($nonTodayBookingCount + $todayBookingCount).toBe(3);
 
     await page.locator("data-testid=wipe-today-button").click();
 

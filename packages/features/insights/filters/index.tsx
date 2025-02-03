@@ -1,13 +1,13 @@
 import { useFilterContext } from "@calcom/features/insights/context/provider";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
-import { Button, Tooltip } from "@calcom/ui";
-import { X } from "@calcom/ui/components/icon";
+import { Button, Icon, Tooltip } from "@calcom/ui";
 
 import { DateSelect } from "./DateSelect";
+import { Download } from "./Download";
 import { EventTypeList } from "./EventTypeList";
 import { FilterType } from "./FilterType";
 import { TeamAndSelfList } from "./TeamAndSelfList";
-import { UserListInTeam } from "./UsersListInTeam";
+import { UserListInTeam } from "./UserListInTeam";
 
 const ClearFilters = () => {
   const { t } = useLocale();
@@ -27,7 +27,7 @@ const ClearFilters = () => {
         onClick={() => {
           clearFilters();
         }}>
-        <X className="mr-1 h-4 w-4" />
+        <Icon name="x" className="mr-1 h-4 w-4" />
         {t("clear")}
       </Button>
     </Tooltip>
@@ -35,10 +35,20 @@ const ClearFilters = () => {
 };
 
 export const Filters = () => {
+  const { filter } = useFilterContext();
+  const { selectedFilter } = filter;
+
+  // Get all filters that relate to the routing form
+  const routingFormFieldIds = selectedFilter
+    ? selectedFilter.map((filter) => {
+        if (filter.startsWith("rf_")) return filter.substring(3);
+      })
+    : [];
+
   return (
-    <div className="mb-4 ml-auto mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-between">
+    <div className="ml-auto mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-between">
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-nowrap sm:justify-start">
-        <TeamAndSelfList />
+        <TeamAndSelfList omitOrg={false} />
 
         <UserListInTeam />
 
@@ -57,7 +67,7 @@ export const Filters = () => {
                     color="secondary"
                     target="_blank"
                     rel="noreferrer"
-                    StartIcon={Settings}
+                    StartIcon="settings"
                     className="h-[38px]"
                   />
                 </Tooltip>
@@ -67,12 +77,15 @@ export const Filters = () => {
             color="secondary"
             target="_blank"
             rel="noreferrer"
-            StartIcon={Download}
+            StartIcon="download"
             className="h-[38px]"
           />
         </Tooltip>
       </ButtonGroup> */}
-      <DateSelect />
+      <div className="flex flex-col-reverse sm:flex-row sm:flex-nowrap sm:justify-between">
+        <Download />
+        <DateSelect className="me-2 ms-2" />
+      </div>
     </div>
   );
 };

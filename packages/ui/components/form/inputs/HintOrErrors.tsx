@@ -1,19 +1,24 @@
 import type { FieldValues } from "react-hook-form";
 import { useFormContext } from "react-hook-form";
 
-import { Check, Circle, Info, X } from "../../icon";
+import { Icon } from "../../icon";
+import { InputError } from "./InputError";
 
-export function HintsOrErrors<T extends FieldValues = FieldValues>(props: {
+type hintsOrErrorsProps = {
   hintErrors?: string[];
   fieldName: string;
   t: (key: string) => string;
-}) {
+};
+
+export function HintsOrErrors<T extends FieldValues = FieldValues>({
+  hintErrors,
+  fieldName,
+  t,
+}: hintsOrErrorsProps) {
   const methods = useFormContext() as ReturnType<typeof useFormContext> | null;
   /* If there's no methods it means we're using these components outside a React Hook Form context */
   if (!methods) return null;
   const { formState } = methods;
-  const { hintErrors, fieldName, t } = props;
-
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore
   const fieldErrors: FieldErrors<T> | undefined = formState.errors[fieldName];
@@ -46,15 +51,31 @@ export function HintsOrErrors<T extends FieldValues = FieldValues>(props: {
             return (
               <li
                 key={key}
-                className={error !== undefined ? (submitted ? "text-red-700" : "") : "text-green-600"}>
+                data-testid="hint-error"
+                className={error !== undefined ? (submitted ? "text-red-500" : "") : "text-green-600"}>
                 {error !== undefined ? (
                   submitted ? (
-                    <X size="12" strokeWidth="3" className="-ml-1 inline-block ltr:mr-2 rtl:ml-2" />
+                    <Icon
+                      name="x"
+                      size="12"
+                      strokeWidth="3"
+                      className="-ml-1 inline-block ltr:mr-2 rtl:ml-2"
+                    />
                   ) : (
-                    <Circle fill="currentColor" size="5" className="inline-block ltr:mr-2 rtl:ml-2" />
+                    <Icon
+                      name="circle"
+                      fill="currentColor"
+                      size="5"
+                      className="inline-block ltr:mr-2 rtl:ml-2"
+                    />
                   )
                 ) : (
-                  <Check size="12" strokeWidth="3" className="-ml-1 inline-block ltr:mr-2 rtl:ml-2" />
+                  <Icon
+                    name="check"
+                    size="12"
+                    strokeWidth="3"
+                    className="-ml-1 inline-block ltr:mr-2 rtl:ml-2"
+                  />
                 )}
                 {t(`${fieldName}_hint_${key}`)}
               </li>
@@ -67,14 +88,7 @@ export function HintsOrErrors<T extends FieldValues = FieldValues>(props: {
 
   // errors exist, not custom ones, just show them as is
   if (fieldErrors) {
-    return (
-      <div className="text-gray mt-2 flex items-center gap-x-2 text-sm text-red-700">
-        <div>
-          <Info className="h-3 w-3" />
-        </div>
-        <p>{fieldErrors.message}</p>
-      </div>
-    );
+    return <InputError message={fieldErrors.message} />;
   }
 
   if (!hintErrors) return null;
@@ -89,9 +103,14 @@ export function HintsOrErrors<T extends FieldValues = FieldValues>(props: {
           return (
             <li key={key} className={!!dirty ? "text-green-600" : ""}>
               {!!dirty ? (
-                <Check size="12" strokeWidth="3" className="-ml-1 inline-block ltr:mr-2 rtl:ml-2" />
+                <Icon
+                  name="check"
+                  size="12"
+                  strokeWidth="3"
+                  className="-ml-1 inline-block ltr:mr-2 rtl:ml-2"
+                />
               ) : (
-                <Circle fill="currentColor" size="5" className="inline-block ltr:mr-2 rtl:ml-2" />
+                <Icon name="circle" fill="currentColor" size="5" className="inline-block ltr:mr-2 rtl:ml-2" />
               )}
               {t(`${fieldName}_hint_${key}`)}
             </li>

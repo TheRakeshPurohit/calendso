@@ -1,3 +1,4 @@
+import type { IFromUser, IOutOfOfficeData, IToUser } from "@calcom/core/getUserAvailability";
 import type { Dayjs } from "@calcom/dayjs";
 import dayjs from "@calcom/dayjs";
 import type { WorkingHours, TimeRange as DateOverride } from "@calcom/types/schedule";
@@ -16,6 +17,7 @@ export type GetSlots = {
   eventLength: number;
   offsetStart?: number;
   organizerTimeZone: string;
+  datesOutOfOffice?: IOutOfOfficeData;
 };
 export type TimeFrame = { userIds?: number[]; startTime: number; endTime: number };
 
@@ -147,6 +149,7 @@ function buildSlotsWithDateRanges({
   minimumBookingNotice,
   organizerTimeZone,
   offsetStart,
+  datesOutOfOffice,
 }: {
   dateRanges: DateRange[];
   frequency: number;
@@ -155,30 +158,40 @@ function buildSlotsWithDateRanges({
   minimumBookingNotice: number;
   organizerTimeZone: string;
   offsetStart?: number;
+  datesOutOfOffice?: IOutOfOfficeData;
 }) {
   // keep the old safeguards in; may be needed.
   frequency = minimumOfOne(frequency);
   eventLength = minimumOfOne(eventLength);
   offsetStart = offsetStart ? minimumOfOne(offsetStart) : 0;
-  const slots: { time: Dayjs; userIds?: number[] }[] = [];
+  const slots: {
+    time: Dayjs;
+    userIds?: number[];
+    away?: boolean;
+    fromUser?: IFromUser;
+    toUser?: IToUser;
+    reason?: string;
+    emoji?: string;
+  }[] = [];
 
+  let interval = Number(process.env.NEXT_PUBLIC_AVAILABILITY_SCHEDULE_INTERVAL) || 1;
+  const intervalsWithDefinedStartTimes = [60, 30, 20, 15, 10, 5];
+
+  for (let i = 0; i < intervalsWithDefinedStartTimes.length; i++) {
+    if (frequency % intervalsWithDefinedStartTimes[i] === 0) {
+      interval = intervalsWithDefinedStartTimes[i];
+      break;
+    }
+  }
+
+  const processedOOODates = new Set<string>();
   dateRanges.forEach((range) => {
+    const dateYYYYMMDD = range.start.format("YYYY-MM-DD");
     const startTimeWithMinNotice = dayjs.utc().add(minimumBookingNotice, "minute");
 
     let slotStartTime = range.start.utc().isAfter(startTimeWithMinNotice)
       ? range.start
       : startTimeWithMinNotice;
-
-    let interval = 15;
-
-    const intervalsWithDefinedStartTimes = [60, 30, 20, 10];
-
-    for (let i = 0; i < intervalsWithDefinedStartTimes.length; i++) {
-      if (frequency % intervalsWithDefinedStartTimes[i] === 0) {
-        interval = intervalsWithDefinedStartTimes[i];
-        break;
-      }
-    }
 
     slotStartTime =
       slotStartTime.minute() % interval !== 0
@@ -194,10 +207,53 @@ function buildSlotsWithDateRanges({
 
     slotStartTime = slotStartTime.add(offsetStart ?? 0, "minutes").tz(timeZone);
 
-    while (!slotStartTime.add(eventLength, "minutes").subtract(1, "second").utc().isAfter(rangeEnd)) {
-      slots.push({
-        time: slotStartTime,
+    // Add OOO slot if exists and is before current range
+    if (datesOutOfOffice) {
+      Object.entries(datesOutOfOffice).forEach(([dateStr, oooData]) => {
+        const oooDate = dayjs(dateStr);
+        if (oooDate.isBefore(dateYYYYMMDD, "day") && !processedOOODates.has(dateStr)) {
+          slots.push({
+            time: oooDate.startOf("day"),
+            away: true,
+            ...(oooData.fromUser && { fromUser: oooData.fromUser }),
+            ...(oooData.toUser && { toUser: oooData.toUser }),
+            ...(oooData.reason && { reason: oooData.reason }),
+            ...(oooData.emoji && { emoji: oooData.emoji }),
+          });
+          // when the date range increases in the next iteration, we don't want to process this date again
+          processedOOODates.add(dateStr);
+        }
       });
+    }
+
+    while (!slotStartTime.add(eventLength, "minutes").subtract(1, "second").utc().isAfter(rangeEnd)) {
+      const dateOutOfOfficeExists = datesOutOfOffice?.[dateYYYYMMDD];
+      let slotData: {
+        time: Dayjs;
+        userIds?: number[];
+        away?: boolean;
+        fromUser?: IFromUser;
+        toUser?: IToUser;
+        reason?: string;
+        emoji?: string;
+      } = {
+        time: slotStartTime,
+      };
+
+      if (dateOutOfOfficeExists) {
+        const { toUser, fromUser, reason, emoji } = dateOutOfOfficeExists;
+
+        slotData = {
+          time: slotStartTime,
+          away: true,
+          ...(fromUser && { fromUser }),
+          ...(toUser && { toUser }),
+          ...(reason && { reason }),
+          ...(emoji && { emoji }),
+        };
+        processedOOODates.add(dateYYYYMMDD);
+      }
+      slots.push(slotData);
       slotStartTime = slotStartTime.add(frequency + (offsetStart ?? 0), "minutes");
     }
   });
@@ -221,6 +277,7 @@ const getSlots = ({
   eventLength,
   offsetStart = 0,
   organizerTimeZone,
+  datesOutOfOffice,
 }: GetSlots) => {
   if (dateRanges) {
     const slots = buildSlotsWithDateRanges({
@@ -231,6 +288,7 @@ const getSlots = ({
       minimumBookingNotice,
       organizerTimeZone,
       offsetStart,
+      datesOutOfOffice,
     });
     return slots;
   }

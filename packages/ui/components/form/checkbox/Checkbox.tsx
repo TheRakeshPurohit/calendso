@@ -1,10 +1,12 @@
 import * as CheckboxPrimitive from "@radix-ui/react-checkbox";
 import { useId } from "@radix-ui/react-id";
-import { Check } from "lucide-react";
 import type { InputHTMLAttributes } from "react";
 import React, { forwardRef } from "react";
 
 import classNames from "@calcom/lib/classNames";
+import { markdownToSafeHTML } from "@calcom/lib/markdownToSafeHTML";
+
+import { Icon } from "../../icon";
 
 type Props = InputHTMLAttributes<HTMLInputElement> & {
   label?: React.ReactNode;
@@ -32,7 +34,7 @@ const Checkbox = React.forwardRef<
     )}
     {...props}>
     <CheckboxPrimitive.Indicator className={classNames("flex items-center justify-center text-current")}>
-      <Check className="h-4 w-4" />
+      <Icon name="check" className="h-4 w-4" />
     </CheckboxPrimitive.Indicator>
   </CheckboxPrimitive.Root>
 ));
@@ -80,7 +82,7 @@ const CheckboxField = forwardRef<HTMLInputElement, Props>(
                     disabled={disabled}
                     id={rest.id ? rest.id : id}
                     className={classNames(
-                      "text-primary-600 focus:ring-primary-500 border-default bg-default focus:bg-default active:bg-default h-4 w-4 rounded checked:hover:bg-gray-600 focus:outline-none focus:ring-0 ltr:mr-2 rtl:ml-2",
+                      "text-emphasis focus:ring-emphasis dark:text-muted border-default bg-default focus:bg-default active:bg-default h-4 w-4 rounded transition checked:hover:bg-gray-600 focus:outline-none focus:ring-0 ltr:mr-2 rtl:ml-2",
                       !error && disabled
                         ? "cursor-not-allowed bg-gray-300 checked:bg-gray-300 hover:bg-gray-300 hover:checked:bg-gray-300"
                         : "hover:bg-subtle hover:border-emphasis checked:bg-gray-800",
@@ -93,8 +95,9 @@ const CheckboxField = forwardRef<HTMLInputElement, Props>(
                 {descriptionAsSafeHtml ? (
                   <span
                     className={classNames("text-sm", rest.descriptionClassName)}
+                    // eslint-disable-next-line react/no-danger
                     dangerouslySetInnerHTML={{
-                      __html: descriptionAsSafeHtml,
+                      __html: markdownToSafeHTML(descriptionAsSafeHtml),
                     }}
                   />
                 ) : (

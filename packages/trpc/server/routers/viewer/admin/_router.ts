@@ -1,62 +1,110 @@
-import { z } from "zod";
-
 import { authedAdminProcedure } from "../../../procedures/authedProcedure";
-import { router } from "../../../trpc";
+import { importHandler, router } from "../../../trpc";
+import { ZCreateSelfHostedLicenseSchema } from "./createSelfHostedLicenseKey.schema";
 import { ZListMembersSchema } from "./listPaginated.schema";
+import { ZAdminLockUserAccountSchema } from "./lockUserAccount.schema";
+import { ZAdminRemoveTwoFactor } from "./removeTwoFactor.schema";
 import { ZAdminPasswordResetSchema } from "./sendPasswordReset.schema";
+import { ZSetSMSLockState } from "./setSMSLockState.schema";
+import { toggleFeatureFlag } from "./toggleFeatureFlag.procedure";
+import {
+  workspacePlatformCreateSchema,
+  workspacePlatformUpdateSchema,
+  workspacePlatformUpdateServiceAccountSchema,
+  workspacePlatformToggleEnabledSchema,
+} from "./workspacePlatform/schema";
 
-type AdminRouterHandlerCache = {
-  listPaginated?: typeof import("./listPaginated.handler").listPaginatedHandler;
-  sendPasswordReset?: typeof import("./sendPasswordReset.handler").sendPasswordResetHandler;
-};
+const NAMESPACE = "admin";
 
-const UNSTABLE_HANDLER_CACHE: AdminRouterHandlerCache = {};
+const namespaced = (s: string) => `${NAMESPACE}.${s}`;
 
 export const adminRouter = router({
-  listPaginated: authedAdminProcedure.input(ZListMembersSchema).query(async ({ ctx, input }) => {
-    if (!UNSTABLE_HANDLER_CACHE.listPaginated) {
-      UNSTABLE_HANDLER_CACHE.listPaginated = await import("./listPaginated.handler").then(
-        (mod) => mod.listPaginatedHandler
-      );
-    }
-
-    // Unreachable code but required for type safety
-    if (!UNSTABLE_HANDLER_CACHE.listPaginated) {
-      throw new Error("Failed to load handler");
-    }
-
-    return UNSTABLE_HANDLER_CACHE.listPaginated({
-      ctx,
-      input,
-    });
+  listPaginated: authedAdminProcedure.input(ZListMembersSchema).query(async (opts) => {
+    const handler = await importHandler(namespaced("listPaginated"), () => import("./listPaginated.handler"));
+    return handler(opts);
   }),
-  sendPasswordReset: authedAdminProcedure
-    .input(ZAdminPasswordResetSchema)
-    .mutation(async ({ ctx, input }) => {
-      if (!UNSTABLE_HANDLER_CACHE.sendPasswordReset) {
-        UNSTABLE_HANDLER_CACHE.sendPasswordReset = await import("./sendPasswordReset.handler").then(
-          (mod) => mod.sendPasswordResetHandler
+  sendPasswordReset: authedAdminProcedure.input(ZAdminPasswordResetSchema).mutation(async (opts) => {
+    const handler = await importHandler(
+      namespaced("sendPasswordReset"),
+      () => import("./sendPasswordReset.handler")
+    );
+    return handler(opts);
+  }),
+  lockUserAccount: authedAdminProcedure.input(ZAdminLockUserAccountSchema).mutation(async (opts) => {
+    const handler = await importHandler(
+      namespaced("lockUserAccount"),
+      () => import("./lockUserAccount.handler")
+    );
+    return handler(opts);
+  }),
+  toggleFeatureFlag,
+  removeTwoFactor: authedAdminProcedure.input(ZAdminRemoveTwoFactor).mutation(async (opts) => {
+    const handler = await importHandler(
+      namespaced("removeTwoFactor"),
+      () => import("./removeTwoFactor.handler")
+    );
+    return handler(opts);
+  }),
+  getSMSLockStateTeamsUsers: authedAdminProcedure.query(async (opts) => {
+    const handler = await importHandler(
+      namespaced("getSMSLockStateTeamsUsers"),
+      () => import("./getSMSLockStateTeamsUsers.handler")
+    );
+    return handler(opts);
+  }),
+  setSMSLockState: authedAdminProcedure.input(ZSetSMSLockState).mutation(async (opts) => {
+    const handler = await importHandler(
+      namespaced("setSMSLockState"),
+      () => import("./setSMSLockState.handler")
+    );
+    return handler(opts);
+  }),
+  createSelfHostedLicense: authedAdminProcedure
+    .input(ZCreateSelfHostedLicenseSchema)
+    .mutation(async (opts) => {
+      const handler = await importHandler(
+        namespaced("createSelfHostedLicense"),
+        () => import("./createSelfHostedLicenseKey.handler")
+      );
+      return handler(opts);
+    }),
+  workspacePlatform: router({
+    list: authedAdminProcedure.query(async () => {
+      const handler = await importHandler(
+        namespaced("workspacePlatforms.list"),
+        () => import("./workspacePlatform/list.handler")
+      );
+      return handler();
+    }),
+    add: authedAdminProcedure.input(workspacePlatformCreateSchema).mutation(async (opts) => {
+      const handler = await importHandler(
+        namespaced("workspacePlatforms.add"),
+        () => import("./workspacePlatform/add.handler")
+      );
+      return handler(opts);
+    }),
+    update: authedAdminProcedure.input(workspacePlatformUpdateSchema).mutation(async (opts) => {
+      const handler = await importHandler(
+        namespaced("workspacePlatforms.update"),
+        () => import("./workspacePlatform/update.handler")
+      );
+      return handler(opts);
+    }),
+    updateServiceAccount: authedAdminProcedure
+      .input(workspacePlatformUpdateServiceAccountSchema)
+      .mutation(async (opts) => {
+        const handler = await importHandler(
+          namespaced("workspacePlatforms.updateServiceAccount"),
+          () => import("./workspacePlatform/updateServiceAccount.handler")
         );
-      }
-
-      // Unreachable code but required for type safety
-      if (!UNSTABLE_HANDLER_CACHE.sendPasswordReset) {
-        throw new Error("Failed to load handler");
-      }
-
-      return UNSTABLE_HANDLER_CACHE.sendPasswordReset({
-        ctx,
-        input,
-      });
+        return handler(opts);
+      }),
+    toggleEnabled: authedAdminProcedure.input(workspacePlatformToggleEnabledSchema).mutation(async (opts) => {
+      const handler = await importHandler(
+        namespaced("workspacePlatforms.toggleEnabled"),
+        () => import("./workspacePlatform/toggleEnabled.handler")
+      );
+      return handler(opts);
     }),
-  toggleFeatureFlag: authedAdminProcedure
-    .input(z.object({ slug: z.string(), enabled: z.boolean() }))
-    .mutation(({ ctx, input }) => {
-      const { prisma, user } = ctx;
-      const { slug, enabled } = input;
-      return prisma.feature.update({
-        where: { slug },
-        data: { enabled, updatedBy: user.id },
-      });
-    }),
+  }),
 });

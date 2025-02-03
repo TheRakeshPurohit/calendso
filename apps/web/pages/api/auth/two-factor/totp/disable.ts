@@ -13,7 +13,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ message: "Method not allowed" });
   }
 
-  const session = await getServerSession({ req, res });
+  const session = await getServerSession({ req });
   if (!session) {
     return res.status(401).json({ message: "Not authenticated" });
   }
@@ -23,13 +23,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: ErrorCode.InternalServerError });
   }
 
-  const user = await prisma.user.findUnique({ where: { id: session.user.id } });
+  const user = await prisma.user.findUnique({ where: { id: session.user.id }, include: { password: true } });
   if (!user) {
     console.error(`Session references user that no longer exists.`);
     return res.status(401).json({ message: "Not authenticated" });
   }
 
-  if (!user.password && user.identityProvider === IdentityProvider.CAL) {
+  if (!user.password?.hash && user.identityProvider === IdentityProvider.CAL) {
     return res.status(400).json({ error: ErrorCode.UserMissingPassword });
   }
 
@@ -37,14 +37,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.json({ message: "Two factor disabled" });
   }
 
-  if (user.password && user.identityProvider === IdentityProvider.CAL) {
-    const isCorrectPassword = await verifyPassword(req.body.password, user.password);
+  if (user.password?.hash && user.identityProvider === IdentityProvider.CAL) {
+    const isCorrectPassword = await verifyPassword(req.body.password, user.password.hash);
     if (!isCorrectPassword) {
       return res.status(400).json({ error: ErrorCode.IncorrectPassword });
     }
   }
-  // if user has 2fa
-  if (user.twoFactorEnabled) {
+
+  // if user has 2fa and using backup code
+  if (user.twoFactorEnabled && req.body.backupCode) {
+    if (!process.env.CALENDSO_ENCRYPTION_KEY) {
+      console.error("Missing encryption key; cannot proceed with backup code login.");
+      throw new Error(ErrorCode.InternalServerError);
+    }
+
+    if (!user.backupCodes) {
+      return res.status(400).json({ error: ErrorCode.MissingBackupCodes });
+    }
+
+    const backupCodes = JSON.parse(symmetricDecrypt(user.backupCodes, process.env.CALENDSO_ENCRYPTION_KEY));
+
+    // check if user-supplied code matches one
+    const index = backupCodes.indexOf(req.body.backupCode.replaceAll("-", ""));
+    if (index === -1) {
+      return res.status(400).json({ error: ErrorCode.IncorrectBackupCode });
+    }
+
+    // we delete all stored backup codes at the end, no need to do this here
+
+    // if user has 2fa and NOT using backup code, try totp
+  } else if (user.twoFactorEnabled) {
     if (!req.body.code) {
       return res.status(400).json({ error: ErrorCode.SecondFactorRequired });
       // throw new Error(ErrorCode.SecondFactorRequired);
@@ -82,6 +104,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       id: session.user.id,
     },
     data: {
+      backupCodes: null,
       twoFactorEnabled: false,
       twoFactorSecret: null,
     },
